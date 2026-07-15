@@ -1,0 +1,80 @@
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
+import { randomUUID } from 'crypto';
+
+/**
+ * MTN MoMo Collections API — "Request to Pay".
+ * Docs: https://momodeveloper.mtn.com
+ * Flow: get access token -> requestToPay -> poll or webhook for status -> release/refund.
+ */
+@Injectable()
+export class MomoProvider {
+  constructor(private config: ConfigService) {}
+
+  private get baseUrl() {
+    return this.config.get<string>('MOMO_BASE_URL');
+  }
+
+  private async getAccessToken(): Promise<string> {
+    const res = await axios.post(
+      `${this.baseUrl}/collection/token/`,
+      {},
+      {
+        auth: {
+          username: this.config.get<string>('MOMO_API_USER')!,
+          password: this.config.get<string>('MOMO_API_KEY')!,
+        },
+        headers: {
+          'Ocp-Apim-Subscription-Key': this.config.get<string>('MOMO_SUBSCRIPTION_KEY'),
+        },
+      },
+    );
+    return res.data.access_token;
+  }
+
+  /** Initiates a request-to-pay. Returns the referenceId used to poll/verify status. */
+  async requestToPay(params: { amountXaf: number; payerPhone: string; externalId: string }) {
+    const referenceId = randomUUID();
+    const token = await this.getAccessToken();
+
+    await axios.post(
+      `${this.baseUrl}/collection/v1_0/requesttopay`,
+      {
+        amount: String(params.amountXaf),
+        currency: 'XAF', // MoMo sandbox often expects EUR; switch per MTN sandbox docs
+        externalId: params.externalId,
+        payer: { partyIdType: 'MSISDN', partyId: params.payerPhone.replace('+', '') },
+        payerMessage: 'AGROFAMILY - order payment',
+        payeeNote: 'AGROFAMILY escrow',
+      },
+      {
+        headers: {
+          'X-Reference-Id': referenceId,
+          'X-Target-Environment': this.config.get<string>('MOMO_TARGET_ENV'),
+          'Ocp-Apim-Subscription-Key': this.config.get<string>('MOMO_SUBSCRIPTION_KEY'),
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    return { referenceId };
+  }
+
+  async getStatus(referenceId: string) {
+    const token = await this.getAccessToken();
+    const res = await axios.get(`${this.baseUrl}/collection/v1_0/requesttopay/${referenceId}`, {
+      headers: {
+        'X-Target-Environment': this.config.get<string>('MOMO_TARGET_ENV'),
+        'Ocp-Apim-Subscription-Key': this.config.get<string>('MOMO_SUBSCRIPTION_KEY'),
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return res.data; // { status: 'SUCCESSFUL' | 'PENDING' | 'FAILED', ... }
+  }
+
+  // NOTE: Disbursement (payout to farmer on release) uses the separate MoMo
+  // Disbursements API with its own subscription key/product — add
+  // disbursementToFarmer() here once those sandbox credentials are issued.
+}
