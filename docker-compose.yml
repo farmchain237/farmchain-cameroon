@@ -1,0 +1,45 @@
+# Database
+DATABASE_URL="postgresql://farmchain:farmchain_dev_pw@localhost:5432/farmchain?schema=public"
+
+# Redis
+REDIS_URL="redis://localhost:6379"
+
+# MQTT
+MQTT_URL="mqtt://localhost:1883"
+
+# Auth
+JWT_SECRET="replace_me"
+JWT_EXPIRES_IN="7d"
+
+# OTP provider (Africa's Talking)
+AT_API_KEY=""
+AT_USERNAME=""
+
+# Stream Chat
+STREAM_API_KEY=""
+STREAM_API_SECRET=""
+
+# MTN MoMo
+MOMO_SUBSCRIPTION_KEY=""
+MOMO_API_USER=""
+MOMO_API_KEY=""
+MOMO_TARGET_ENV="mtncameroon"
+MOMO_BASE_URL="https://sandbox.momodeveloper.mtn.com"
+
+# Orange Money
+ORANGE_MONEY_CLIENT_ID=""
+ORANGE_MONEY_CLIENT_SECRET=""
+ORANGE_MONEY_MERCHANT_KEY=""
+
+# AWS
+AWS_REGION="af-south-1"
+AWS_ACCESS_KEY_ID=""
+AWS_SECRET_ACCESS_KEY=""
+S3_BUCKET="farmchain-media"
+CLOUDFRONT_DOMAIN=""
+
+# Encryption for stored RTSP URLs (32-byte key, base64)
+DEVICE_SECRET_ENC_KEY=""
+
+PORT=3000
+TZ=Africa/Douala
