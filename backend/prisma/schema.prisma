@@ -1,6 +1,7 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -430,3 +431,4 @@ model DailyReport {
   @@unique([companyId, reportDate])
   @@map("daily_reports")
 }
+Fix missing OpenSSL library
