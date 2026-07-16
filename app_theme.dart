@@ -1,92 +1,78 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../common/prisma.module';
-import { CreateListingDto, SearchListingsDto } from './dto/listings.dto';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:hive/hive.dart';
+import 'package:pin_code_fields/pin_code_fields.dart';
+import '../../core/api/api_client.dart';
 
-@Injectable()
-export class ListingsService {
-  constructor(private prisma: PrismaService) {}
+class OtpVerifyScreen extends StatefulWidget {
+  const OtpVerifyScreen({super.key, required this.phone});
+  final String phone;
 
-  async create(farmerId: string, dto: CreateListingDto) {
-    const listing = await this.prisma.listing.create({
-      data: {
-        farmerId,
-        farmId: dto.farmId,
-        cropType: dto.cropType,
-        region: dto.region,
-        qtyKg: dto.qtyKg,
-        grade: dto.grade,
-        pricePerKg: dto.pricePerKg,
-        harvestDate: new Date(dto.harvestDate),
-        photos: dto.photos,
-      },
+  @override
+  State<OtpVerifyScreen> createState() => _OtpVerifyScreenState();
+}
+
+class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
+  String _code = '';
+  bool _loading = false;
+  String? _error;
+
+  Future<void> _verify() async {
+    if (_code.length < 6) return;
+    setState(() {
+      _loading = true;
+      _error = null;
     });
-
-    // Set PostGIS point via raw SQL since Prisma can't write Unsupported() columns directly
-    if (dto.lat != null && dto.lng != null) {
-      await this.prisma.$executeRawUnsafe(
-        `UPDATE listings SET location = ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography WHERE id = $3`,
-        dto.lng,
-        dto.lat,
-        listing.id,
-      );
+    try {
+      final res = await ApiClient.instance.dio.post('/auth/otp/verify', data: {
+        'phone': widget.phone,
+        'code': _code,
+        // fullName/role are only required for first-time signup; if the backend
+        // returns 400 asking for them, route to a small profile-completion step.
+      });
+      final data = res.data as Map<String, dynamic>;
+      await Hive.box('auth').put('token', data['token']);
+      await Hive.box('auth').put('user', data['user']);
+      if (mounted) context.go('/listings');
+    } catch (e) {
+      setState(() => _error = 'Code invalide ou expiré. Réessayez.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
-
-    return listing;
   }
 
-  // Filtered + optional radius search. Falls back to plain filters if no lat/lng given
-  // (essential for 2G/offline-first clients that can't always get a GPS fix instantly).
-  async search(q: SearchListingsDto) {
-    const page = q.page ?? 1;
-    const pageSize = Math.min(q.pageSize ?? 20, 50);
-    const offset = (page - 1) * pageSize;
-
-    const conditions: string[] = [`status = 'ACTIVE'`];
-    const params: any[] = [];
-    let idx = 1;
-
-    if (q.cropType) { conditions.push(`"cropType" = $${idx++}`); params.push(q.cropType); }
-    if (q.region) { conditions.push(`region = $${idx++}`); params.push(q.region); }
-    if (q.grade) { conditions.push(`grade = $${idx++}`); params.push(q.grade); }
-    if (q.minPrice != null) { conditions.push(`"pricePerKg" >= $${idx++}`); params.push(q.minPrice); }
-    if (q.maxPrice != null) { conditions.push(`"pricePerKg" <= $${idx++}`); params.push(q.maxPrice); }
-
-    let distanceSelect = '';
-    let orderBy = 'ORDER BY "createdAt" DESC';
-
-    if (q.lat != null && q.lng != null) {
-      distanceSelect = `, ST_Distance(location, ST_SetSRID(ST_MakePoint($${idx}, $${idx + 1}), 4326)::geography) / 1000 AS "distanceKm"`;
-      const lngIdx = idx, latIdx = idx + 1;
-      params.push(q.lng, q.lat);
-      idx += 2;
-      if (q.radiusKm) {
-        conditions.push(
-          `ST_DWithin(location, ST_SetSRID(ST_MakePoint($${lngIdx}, $${latIdx}), 4326)::geography, $${idx++})`,
-        );
-        params.push(q.radiusKm * 1000);
-      }
-      orderBy = `ORDER BY "distanceKm" ASC`;
-    }
-
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    params.push(pageSize, offset);
-
-    const sql = `
-      SELECT id, "farmerId", "cropType", region, "qtyKg", grade, "pricePerKg",
-             "harvestDate", photos, "createdAt" ${distanceSelect}
-      FROM listings
-      ${where}
-      ${orderBy}
-      LIMIT $${idx++} OFFSET $${idx++}
-    `;
-
-    return this.prisma.$queryRawUnsafe(sql, ...params);
-  }
-
-  findOne(id: string) {
-    return this.prisma.listing.findUnique({
-      where: { id },
-      include: { farmer: true, videos: true },
-    });
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Vérification')),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Code envoyé au ${widget.phone}'),
+            const SizedBox(height: 24),
+            PinCodeTextField(
+              appContext: context,
+              length: 6,
+              onChanged: (v) => _code = v,
+              onCompleted: (_) => _verify(),
+              pinTheme: PinTheme(shape: PinCodeFieldShape.box, borderRadius: BorderRadius.circular(8)),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: const TextStyle(color: Colors.red)),
+            ],
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: _loading ? null : _verify,
+              child: _loading
+                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Confirmer'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
