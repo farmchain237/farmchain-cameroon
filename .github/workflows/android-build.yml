@@ -34,6 +34,42 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate complete Android project files
+        run: |
+          flutter create --org cm.farmchain --project-name app --platforms=android /tmp/android_scaffold
+          rm -rf android
+          cp -r /tmp/android_scaffold/android ./android
+
+      - name: Re-apply AGROFAMILY permissions and app name
+        run: |
+          python3 - <<'EOF'
+          import re
+          path = "android/app/src/main/AndroidManifest.xml"
+          with open(path) as f:
+              content = f.read()
+
+          permissions = """    <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+          """
+          content = content.replace("<manifest", "<manifest_TEMP_MARKER", 1)
+          content = content.replace(
+              'xmlns:android="http://schemas.android.com/apk/res/android">',
+              'xmlns:android="http://schemas.android.com/apk/res/android">\n' + permissions,
+              1
+          )
+          content = content.replace("<manifest_TEMP_MARKER", "<manifest", 1)
+          content = re.sub(r'android:label="[^"]*"', 'android:label="AGROFAMILY"', content)
+
+          with open(path, "w") as f:
+              f.write(content)
+          print("AndroidManifest.xml updated successfully")
+          EOF
+
       - name: Build Android APK (installable file)
         run: flutter build apk --release
 
