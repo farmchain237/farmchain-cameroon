@@ -1,2 +1,0 @@
-app_identifier("cm.farmchain.app")
-team_id(ENV["APPLE_TEAM_ID"])
