@@ -1,32 +1,50 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
-class HomeShell extends StatelessWidget {
-  const HomeShell({super.key, required this.child});
-  final Widget child;
+import 'core/router/app_router.dart';
+import 'core/theme/app_theme.dart';
+import 'core/locale/locale_controller.dart';
 
-  static const _tabs = [
-    ('/listings', Icons.storefront_outlined, 'Marché'),
-    ('/chat', Icons.chat_bubble_outline, 'Discussions'),
-    ('/videos/record', Icons.videocam_outlined, 'Vidéos'),
-    ('/security', Icons.security_outlined, 'Sécurité'),
-    ('/employee/clock', Icons.badge_outlined, 'Pointage'),
-  ];
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Offline-first local cache: listings, chat drafts, pending uploads survive
+  // app kills on patchy 2G/3G. See core/api/offline_queue.dart for the retry logic.
+  await Hive.initFlutter();
+  await Hive.openBox('listings_cache');
+  await Hive.openBox('pending_uploads');
+  await Hive.openBox('auth');
+
+  // NOTE: Firebase (push notifications) intentionally not initialized yet —
+  // requires google-services.json from a Firebase account we haven't created.
+  // Will be re-added when notifications are set up.
+  await initializeDateFormatting('en');
+  await initializeDateFormatting('fr_CM');
+
+  runApp(const ProviderScope(child: FarmChainApp()));
+}
+
+class FarmChainApp extends ConsumerWidget {
+  const FarmChainApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final location = GoRouterState.of(context).uri.toString();
-    final currentIndex = _tabs.indexWhere((t) => location.startsWith(t.$1)).clamp(0, _tabs.length - 1);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(appRouterProvider);
+    final locale = ref.watch(localeControllerProvider);
 
-    return Scaffold(
-      body: child,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: currentIndex,
-        onDestinationSelected: (i) => context.go(_tabs[i].$1),
-        destinations: [
-          for (final t in _tabs) NavigationDestination(icon: Icon(t.$2), label: t.$3),
-        ],
-      ),
+    return MaterialApp.router(
+      title: 'AGROFAMILY',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light,
+      locale: locale,
+      supportedLocales: const [Locale('fr', 'CM'), Locale('en')],
+      localizationsDelegates: const [
+        // GlobalMaterialLocalizations.delegate, etc. — wire up flutter_localizations
+        // plus generated AppLocalizations once .arb files are added under assets/i18n/.
+      ],
+      routerConfig: router,
     );
   }
 }
