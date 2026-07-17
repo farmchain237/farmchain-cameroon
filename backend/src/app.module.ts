@@ -14,6 +14,8 @@ import { SecurityModule } from './security/security.module';
 import { EmployeesModule } from './employees/employees.module';
 import { ReportsModule } from './reports/reports.module';
 
+import { AdminModule } from './admin/admin.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -29,6 +31,7 @@ import { ReportsModule } from './reports/reports.module';
     SecurityModule,
     EmployeesModule,
     ReportsModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

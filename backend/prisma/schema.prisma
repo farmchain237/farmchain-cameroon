@@ -431,4 +431,3 @@ model DailyReport {
   @@unique([companyId, reportDate])
   @@map("daily_reports")
 }
-

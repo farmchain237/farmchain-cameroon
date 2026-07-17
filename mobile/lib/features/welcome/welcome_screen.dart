@@ -1,21 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hive/hive.dart';
+import '../../core/l10n/app_strings.dart';
+import '../../core/locale/locale_controller.dart';
 
-class WelcomeScreen extends StatefulWidget {
+class WelcomeScreen extends ConsumerStatefulWidget {
   const WelcomeScreen({super.key});
 
   @override
-  State<WelcomeScreen> createState() => _WelcomeScreenState();
+  ConsumerState<WelcomeScreen> createState() => _WelcomeScreenState();
 }
 
-class _WelcomeScreenState extends State<WelcomeScreen> {
-  String? _selectedLang;
+class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
+  AppLang? _selected;
 
-  Future<void> _confirm() async {
-    if (_selectedLang == null) return;
-    await Hive.box('auth').put('locale', _selectedLang);
-    if (mounted) context.go('/auth/phone');
+  void _confirm() {
+    if (_selected == null) return;
+    ref.read(localeControllerProvider.notifier).setLang(_selected!);
+    context.go('/auth/phone');
   }
 
   @override
@@ -34,41 +36,39 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 'AGROFAMILY',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1B7A3D),
-                  letterSpacing: 2,
+                  fontSize: 32, fontWeight: FontWeight.bold,
+                  color: Color(0xFF1B7A3D), letterSpacing: 2,
                 ),
               ),
               const SizedBox(height: 8),
               const Text(
-                'Connecting farmers, buyers & communities\nReliant les agriculteurs, acheteurs et communautés',
+                'Connecting farmers, buyers & communities\n'
+                'Reliant les agriculteurs, acheteurs et communautés\n'
+                'Wi dey connect farm people, buyer dem na community',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: Colors.grey),
+                style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
-              const SizedBox(height: 56),
+              const SizedBox(height: 48),
               const Text(
-                'Choose your language / Choisissez votre langue',
+                'Choose your language\nChoisissez votre langue\nPick de language wey yu want',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 24),
-              _LangButton(
-                flag: '🇬🇧',
-                label: 'English',
-                selected: _selectedLang == 'en',
-                onTap: () => setState(() => _selectedLang = 'en'),
-              ),
-              const SizedBox(height: 16),
-              _LangButton(
-                flag: '🇫🇷',
-                label: 'Français',
-                selected: _selectedLang == 'fr',
-                onTap: () => setState(() => _selectedLang = 'fr'),
-              ),
-              const SizedBox(height: 40),
+              _LangTile(flag: '🇬🇧', label: 'English',
+                  selected: _selected == AppLang.en,
+                  onTap: () => setState(() => _selected = AppLang.en)),
+              const SizedBox(height: 12),
+              _LangTile(flag: '🇫🇷', label: 'Français',
+                  selected: _selected == AppLang.fr,
+                  onTap: () => setState(() => _selected = AppLang.fr)),
+              const SizedBox(height: 12),
+              _LangTile(flag: '🇨🇲', label: 'Pidgin',
+                  selected: _selected == AppLang.pcm,
+                  onTap: () => setState(() => _selected = AppLang.pcm)),
+              const SizedBox(height: 36),
               ElevatedButton(
-                onPressed: _selectedLang == null ? null : _confirm,
+                onPressed: _selected == null ? null : _confirm,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   backgroundColor: const Color(0xFF1B7A3D),
@@ -77,15 +77,16 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       borderRadius: BorderRadius.circular(12)),
                 ),
                 child: Text(
-                  _selectedLang == null
-                      ? 'Select a language / Choisir une langue'
-                      : _selectedLang == 'en'
-                          ? 'Continue'
-                          : 'Continuer',
+                  _selected == null
+                      ? 'Select / Choisir / Pick'
+                      : _selected == AppLang.fr
+                          ? 'Continuer'
+                          : _selected == AppLang.pcm
+                              ? 'Kontinu'
+                              : 'Continue',
                   style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: _selectedLang == null ? Colors.grey : Colors.white,
+                    fontSize: 16, fontWeight: FontWeight.bold,
+                    color: _selected == null ? Colors.grey : Colors.white,
                   ),
                 ),
               ),
@@ -97,15 +98,12 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   }
 }
 
-class _LangButton extends StatelessWidget {
-  const _LangButton({
-    required this.flag,
-    required this.label,
-    required this.selected,
-    required this.onTap,
+class _LangTile extends StatelessWidget {
+  const _LangTile({
+    required this.flag, required this.label,
+    required this.selected, required this.onTap,
   });
-  final String flag;
-  final String label;
+  final String flag, label;
   final bool selected;
   final VoidCallback onTap;
 
@@ -114,21 +112,17 @@ class _LangButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 18),
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
           color: selected ? const Color(0xFF1B7A3D) : Colors.white,
           border: Border.all(color: const Color(0xFF1B7A3D), width: 2),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Text(
-          '$flag  $label',
+        child: Text('$flag  $label',
           textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: selected ? Colors.white : const Color(0xFF1B7A3D),
-          ),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600,
+              color: selected ? Colors.white : const Color(0xFF1B7A3D)),
         ),
       ),
     );
