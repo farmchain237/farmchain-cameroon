@@ -7,6 +7,7 @@ import '../../features/auth/phone_entry_screen.dart';
 import '../../features/auth/otp_verify_screen.dart';
 import '../../features/listings/listings_screen.dart';
 import '../../features/listings/listing_detail_screen.dart';
+import '../../features/listings/create_listing_screen.dart';
 import '../../features/chat/chat_list_screen.dart';
 import '../../features/videos/record_video_screen.dart';
 import '../../features/security/security_tab_screen.dart';
@@ -41,6 +42,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, __, child) => HomeShell(child: child),
         routes: [
           GoRoute(path: '/listings', builder: (_, __) => const ListingsScreen()),
+          GoRoute(
+            path: '/listings/create',
+            builder: (_, __) => const CreateListingScreen(),
+          ),
           GoRoute(
             path: '/listings/:id',
             builder: (_, state) =>

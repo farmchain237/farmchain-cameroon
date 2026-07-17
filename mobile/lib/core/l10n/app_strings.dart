@@ -179,6 +179,9 @@ class S {
       'No net — na old data dis');
 
   // ── Helper ──────────────────────────────────────────────────────
+  // expose current language so screens can do conditional UI
+  AppLang get currentLang => lang;
+
   String _t(String en, String fr, String pcm) {
     switch (lang) {
       case AppLang.fr: return fr;
