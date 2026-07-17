@@ -6,7 +6,7 @@ import axios from 'axios';
 import { PrismaService } from '../common/prisma.module';
 import { RequestOtpDto, VerifyOtpDto } from './dto/auth.dto';
 
-const OTP_TTL_SECONDS = 5 * 60;
+const OTP_TTL_SECONDS = 15 * 60; // 15 minutes — accounts for Render free tier wake-up delay
 
 @Injectable()
 export class AuthService {

@@ -1,7 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:hive/hive.dart';
 
-/// Base URL swapped per environment via --dart-define=API_BASE_URL=...
 const _apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
   defaultValue: 'https://agrofamily-backend.onrender.com/api/v1',
@@ -11,8 +10,11 @@ class ApiClient {
   ApiClient._internal() {
     _dio = Dio(BaseOptions(
       baseUrl: _apiBaseUrl,
-      connectTimeout: const Duration(seconds: 15), // generous for 2G/3G
-      receiveTimeout: const Duration(seconds: 20),
+      // Fix 3: increased to 60s so a sleeping Render server has time to wake up
+      // before the app gives up and shows an error. Free tier sleeps after
+      // 15 min of inactivity — first request of the day always takes ~30-50s.
+      connectTimeout: const Duration(seconds: 60),
+      receiveTimeout: const Duration(seconds: 60),
     ));
 
     _dio.interceptors.add(InterceptorsWrapper(
@@ -23,17 +25,10 @@ class ApiClient {
         }
         return handler.next(options);
       },
-      onError: (error, handler) {
-        // Network drop on a bad connection — the offline queue (see
-        // core/api/offline_queue.dart) retries idempotent requests later
-        // instead of surfacing a raw Dio error to the farmer.
-        return handler.next(error);
-      },
     ));
   }
 
   static final ApiClient instance = ApiClient._internal();
   late final Dio _dio;
-
   Dio get dio => _dio;
 }
