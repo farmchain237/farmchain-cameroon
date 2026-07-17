@@ -45,9 +45,9 @@ export class ListingsService {
     const params: any[] = [];
     let idx = 1;
 
-    if (q.cropType) { conditions.push(`"cropType" = $${idx++}`); params.push(q.cropType); }
-    if (q.region) { conditions.push(`region = $${idx++}`); params.push(q.region); }
-    if (q.grade) { conditions.push(`grade = $${idx++}`); params.push(q.grade); }
+    if (q.cropType) { conditions.push(`"cropType"::text = $${idx++}`); params.push(q.cropType); }
+    if (q.region) { conditions.push(`region::text = $${idx++}`); params.push(q.region); }
+    if (q.grade) { conditions.push(`grade::text = $${idx++}`); params.push(q.grade); }
     if (q.minPrice != null) { conditions.push(`"pricePerKg" >= $${idx++}`); params.push(q.minPrice); }
     if (q.maxPrice != null) { conditions.push(`"pricePerKg" <= $${idx++}`); params.push(q.maxPrice); }
 
