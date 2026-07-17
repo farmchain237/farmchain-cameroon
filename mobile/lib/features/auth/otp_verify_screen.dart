@@ -19,7 +19,7 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
   final _nameController = TextEditingController();
   String _selectedRole = 'FARMER';
   bool _loading = false;
-  bool _isNewUser = true; // assume new until backend says otherwise
+  bool _verified = false; // prevents double-call
   String? _error;
 
   static const _roles = [
@@ -27,14 +27,17 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
   ];
 
   Future<void> _verify() async {
-    if (_code.length < 6) return;
+    // Hard guard: if already loading or already verified, do nothing
+    if (_code.length < 6 || _loading || _verified) return;
+
     setState(() { _loading = true; _error = null; });
+
     try {
       final body = <String, dynamic>{
         'phone': widget.phone,
         'code': _code,
       };
-      if (_isNewUser && _nameController.text.trim().isNotEmpty) {
+      if (_nameController.text.trim().isNotEmpty) {
         body['fullName'] = _nameController.text.trim();
         body['role'] = _selectedRole;
       }
@@ -43,20 +46,30 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
         '/auth/otp/verify',
         data: body,
       );
+
       final data = res.data as Map<String, dynamic>;
+
+      // Mark as verified IMMEDIATELY so no second call can happen
+      _verified = true;
+
       await Hive.box('auth').put('token', data['token']);
       await Hive.box('auth').put('user', data['user']);
+
+      // Small delay to ensure Hive write completes, then navigate
+      await Future.delayed(const Duration(milliseconds: 200));
       if (mounted) context.go('/listings');
+
     } catch (e) {
-      final s = ref.read(stringsProvider);
-      // If error is "fullName required", show new user fields
       final msg = e.toString().toLowerCase();
+      // If backend says fullName/role missing, make sure fields are visible
       if (msg.contains('fullname') || msg.contains('role')) {
-        setState(() => _isNewUser = true);
+        setState(() => _error =
+            'Please fill in your full name and role below, then try again.');
+      } else {
+        setState(() => _error = ref.read(stringsProvider).invalidCode);
       }
-      setState(() => _error = s.invalidCode);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && !_verified) setState(() => _loading = false);
     }
   }
 
@@ -76,7 +89,6 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 8),
-
             // Phone number display
             Container(
               padding: const EdgeInsets.all(12),
@@ -85,31 +97,32 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.grey.shade200),
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.phone, color: Color(0xFF1B7A3D), size: 18),
-                  const SizedBox(width: 8),
-                  Text(widget.phone,
-                      style: const TextStyle(fontWeight: FontWeight.w500)),
-                ],
-              ),
+              child: Row(children: [
+                const Icon(Icons.phone, color: Color(0xFF1B7A3D), size: 18),
+                const SizedBox(width: 8),
+                Text(widget.phone,
+                    style: const TextStyle(fontWeight: FontWeight.w500)),
+              ]),
             ),
             const SizedBox(height: 8),
             Text(s.codeSent,
                 style: const TextStyle(color: Colors.grey, fontSize: 13)),
             const SizedBox(height: 24),
 
-            // PIN entry — big, easy to tap
             Text(s.verifyCode,
                 style: const TextStyle(fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
+
+            // PIN field — onCompleted just stores the value, does NOT auto-submit
+            // User must tap Confirm button to prevent accidental double-calls
             PinCodeTextField(
               appContext: context,
               length: 6,
               animationType: AnimationType.fade,
               keyboardType: TextInputType.number,
-              onChanged: (v) => _code = v,
-              onCompleted: (_) => _verify(),
+              onChanged: (v) => setState(() => _code = v),
+              onCompleted: (v) => setState(() => _code = v),
+              // Deliberately NOT calling _verify() here — user taps Confirm instead
               pinTheme: PinTheme(
                 shape: PinCodeFieldShape.box,
                 borderRadius: BorderRadius.circular(8),
@@ -122,39 +135,38 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
             ),
             const SizedBox(height: 20),
 
-            // New user fields — only shown when needed
-            if (_isNewUser) ...[
-              Text(s.fullName,
-                  style: const TextStyle(fontWeight: FontWeight.w500)),
-              const SizedBox(height: 6),
-              TextField(
-                controller: _nameController,
-                decoration: InputDecoration(
-                  hintText: 'Uncle G',
-                  prefixIcon: const Icon(Icons.person_outline),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
+            // Name and role fields
+            Text(s.fullName,
+                style: const TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _nameController,
+              decoration: InputDecoration(
+                hintText: 'Your full name',
+                prefixIcon: const Icon(Icons.person_outline),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8)),
               ),
-              const SizedBox(height: 16),
-              Text(s.whoAreYou,
-                  style: const TextStyle(fontWeight: FontWeight.w500)),
-              const SizedBox(height: 6),
-              DropdownButtonFormField<String>(
-                value: _selectedRole,
-                decoration: InputDecoration(
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                  prefixIcon: const Icon(Icons.badge_outlined),
-                ),
-                items: _roles.map((r) => DropdownMenuItem(
-                  value: r,
-                  child: Text(r[0] + r.substring(1).toLowerCase()),
-                )).toList(),
-                onChanged: (v) => setState(() => _selectedRole = v!),
+            ),
+            const SizedBox(height: 16),
+
+            Text(s.whoAreYou,
+                style: const TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              value: _selectedRole,
+              decoration: InputDecoration(
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                prefixIcon: const Icon(Icons.badge_outlined),
               ),
-              const SizedBox(height: 20),
-            ],
+              items: _roles.map((r) => DropdownMenuItem(
+                value: r,
+                child: Text(r[0] + r.substring(1).toLowerCase()),
+              )).toList(),
+              onChanged: (v) => setState(() => _selectedRole = v!),
+            ),
+            const SizedBox(height: 20),
 
             if (_error != null) ...[
               Container(
@@ -165,31 +177,48 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
                   border: Border.all(color: Colors.red.shade200),
                 ),
                 child: Text(_error!,
-                    style: TextStyle(color: Colors.red.shade700, fontSize: 13)),
+                    style: TextStyle(
+                        color: Colors.red.shade700, fontSize: 13)),
               ),
               const SizedBox(height: 16),
             ],
 
             ElevatedButton(
-              onPressed: _loading ? null : _verify,
+              onPressed: (_loading || _verified || _code.length < 6)
+                  ? null
+                  : _verify,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 backgroundColor: const Color(0xFF1B7A3D),
+                disabledBackgroundColor: Colors.grey.shade300,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),
               child: _loading
-                  ? const SizedBox(height: 20, width: 20,
+                  ? const SizedBox(
+                      height: 20, width: 20,
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white))
-                  : Text(s.confirm,
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.bold,
-                          color: Colors.white)),
+                  : _verified
+                      ? const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_circle, color: Colors.white),
+                            SizedBox(width: 8),
+                            Text('Verified! Opening app...',
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white)),
+                          ],
+                        )
+                      : Text(s.confirm,
+                          style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white)),
             ),
-
-            const SizedBox(height: 24),
-            // Testing reminder
+            const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
@@ -197,7 +226,8 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Text(
-                '📋 Testing: get your 6-digit code from\nRender → agrofamily-backend → Logs',
+                '📋 Testing: get your 6-digit code from\n'
+                'Render → agrofamily-backend → Logs',
                 style: TextStyle(fontSize: 11, color: Colors.blueGrey),
                 textAlign: TextAlign.center,
               ),
