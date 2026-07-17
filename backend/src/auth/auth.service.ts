@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
@@ -6,18 +6,23 @@ import axios from 'axios';
 import { PrismaService } from '../common/prisma.module';
 import { RequestOtpDto, VerifyOtpDto } from './dto/auth.dto';
 
-const OTP_TTL_SECONDS = 15 * 60; // 15 minutes — accounts for Render free tier wake-up delay
+const OTP_TTL_SECONDS = 15 * 60;
 
 @Injectable()
 export class AuthService {
   private redis: Redis;
+  private readonly logger = new Logger(AuthService.name);
 
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
   ) {
-    this.redis = new Redis(this.config.get<string>('REDIS_URL')!);
+    const redisUrl = this.config.get<string>('REDIS_URL');
+    this.logger.log(`Connecting to Redis at: ${redisUrl ? redisUrl.replace(/:\/\/.*@/, '://***@') : 'NOT SET'}`);
+    this.redis = new Redis(redisUrl!);
+    this.redis.on('connect', () => this.logger.log('Redis connected successfully'));
+    this.redis.on('error', (err) => this.logger.error(`Redis error: ${err.message}`));
   }
 
   private otpKey(phone: string) {
@@ -26,9 +31,15 @@ export class AuthService {
 
   async requestOtp(dto: RequestOtpDto) {
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    await this.redis.set(this.otpKey(dto.phone), code, 'EX', OTP_TTL_SECONDS);
-
-    // Africa's Talking SMS send. Swap for Twilio if preferred.
+    try {
+      await this.redis.set(this.otpKey(dto.phone), code, 'EX', OTP_TTL_SECONDS);
+      this.logger.log(`[OTP SAVED] ${dto.phone} -> ${code}`);
+      const saved = await this.redis.get(this.otpKey(dto.phone));
+      this.logger.log(`[OTP VERIFY SAVE] Retrieved: ${saved} (matches: ${saved === code})`);
+    } catch (err) {
+      this.logger.error(`[REDIS ERROR] Failed to save OTP: ${err.message}`);
+      throw new Error('Failed to save OTP code');
+    }
     const atApiKey = this.config.get<string>('AT_API_KEY');
     const atUsername = this.config.get<string>('AT_USERNAME');
     if (atApiKey && atUsername) {
@@ -37,28 +48,28 @@ export class AuthService {
         new URLSearchParams({
           username: atUsername,
           to: dto.phone,
-          message: `AGROFAMILY: your code is ${code}. Valid for 5 min.`,
+          message: `AGROFAMILY: your code is ${code}. Valid for 15 min.`,
         }),
         { headers: { apiKey: atApiKey, 'Content-Type': 'application/x-www-form-urlencoded' } },
       );
     } else {
-      // dev fallback — do NOT ship this branch to production
-      // eslint-disable-next-line no-console
       console.log(`[DEV OTP] ${dto.phone} -> ${code}`);
     }
-
     return { sent: true };
   }
 
   async verifyOtp(dto: VerifyOtpDto) {
+    this.logger.log(`[OTP VERIFY] Checking ${dto.phone}: entered=${dto.code}`);
     const stored = await this.redis.get(this.otpKey(dto.phone));
+    this.logger.log(`[OTP VERIFY] Stored code: ${stored}`);
     if (!stored || stored !== dto.code) {
+      this.logger.warn(`[OTP VERIFY] FAILED - stored: ${stored}, entered: ${dto.code}`);
       throw new UnauthorizedException('Code invalide ou expiré');
     }
     await this.redis.del(this.otpKey(dto.phone));
+    this.logger.log(`[OTP VERIFY] SUCCESS for ${dto.phone}`);
 
     let user = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
-
     if (!user) {
       if (!dto.fullName || !dto.role) {
         throw new BadRequestException('fullName et role requis pour un nouveau compte');
@@ -73,7 +84,6 @@ export class AuthService {
         },
       });
     }
-
     const token = await this.jwt.signAsync({ sub: user.id, role: user.role });
     return { token, user };
   }
